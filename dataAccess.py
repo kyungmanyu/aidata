@@ -7,7 +7,7 @@ import datetime
 
 
 class dataAccess():
-    year = 2020
+    year = 2021
     month = 1
     day = 1
     inquirySize = 240
@@ -32,9 +32,9 @@ class dataAccess():
 
     # def load_history_data_from_binance():
     def load_history_data_from_binance(self, simDays, unitTime,coinName):
-        limitCnt = int(60 * 24 / 60)
-        # unitTimeStr = str(unitTime) + 'm'
-        unitTimeStr = str(unitTime) + 'h'
+        limitCnt = int(60 * 24 / 1)
+        unitTimeStr = str(unitTime) + 'm'
+        # unitTimeStr = str(unitTime) + 'h'
         
         
         
