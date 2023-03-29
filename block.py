@@ -52,26 +52,61 @@ class blockfine():
     X_vaild = 0
     y_valid = 0
     test_pred_y = 0
-
+    
+    historyFileName = 'history.xlsx'
+    simulationDF = pd.DataFrame(columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
     def __init__(self):
       
         super().__init__()
+        
+
+    def store_history_data_to_excel(self,da):
+        if os.path.isdir('history_data') == False:
+            os.mkdir('history_data')
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+
+        for r in dataframe_to_rows(da.simulationDF, index=True, header=True):
+            ws.append(r)
+        wb.save(join('history_data', self.historyFileName))
+
+    def load_history_data_from_excel(self,da):
+        wb = openpyxl.load_workbook(join('history_data', self.historyFileName))
+        sheet = wb.get_sheet_by_name('Sheet')
+        df = pd.DataFrame(sheet.values)
+        df.columns = df.iloc[0, :]
+        df = df.iloc[2:, :]
+
+        self.simulationDF['datetime'] = df['datetime'].astype(object)
+        self.simulationDF['open'] = df['open'].astype(float)
+        self.simulationDF['high'] = df['high'].astype(float)
+        self.simulationDF['low'] = df['low'].astype(float)
+        self.simulationDF['close'] = df['close'].astype(float)
+        self.simulationDF['volume'] = df['volume'].astype(float)
+        
+        da.simulationDF = SA.set_rsi_adx_debug(self.simulationDF)
     
-    def makeData(self,da):
+    def makeData(self,da,ind):
         print('make data')
         # data = pd.read_csv('debugnew.csv')
         # X = data.drop('close', axis=1)
         # y = data['close']
+        
+        print('index : ',ind)
 
-
-        simDays = 365
+        simDays = 120
         symbol = 'ETH/USDT'
         unitTime = 1
-        da.load_history_data_from_binance(simDays, unitTime ,symbol)
+        if os.path.isfile(join('history_data', self.historyFileName)) == True:
+            self.load_history_data_from_excel(da)
+        else:
+            da.load_history_data_from_binance(simDays, unitTime ,symbol)
+            self.store_history_data_to_excel(da)
         data = da.simulationDF
         # data['datetime'] =  pd.to_datetime(da.simulationDF['datetime'], unit='ms') + datetime.timedelta(hours=9)
         # data.set_index('datetime',inplace=True)
-        print('data last',data.iloc[-1])
+        # print('data last',data.iloc[-1])
         # dataX = data.drop(['close','datetime'], axis=1)
         
         window = 60
@@ -97,7 +132,7 @@ class blockfine():
         data = data[1000:-window]
                         
         ypd = pd.DataFrame(label,columns=['label'])
-        print('ypd head',ypd.head())
+        # print('ypd head',ypd.head())
         ypd.set_index(data.index,inplace=True)
         
         data = pd.concat([data,ypd],axis=1)
@@ -111,7 +146,15 @@ class blockfine():
         
         # datay = data['close']
         y = data['label'].values
-        X = data.drop(['close','open','high','low','label'], axis=1,inplace=True)
+        # if(ind == 0):
+        #     X = data.drop(['close','open','high','low','label'], axis=1,inplace=True)
+        # elif(ind == 1):
+        #     X = data.drop(['close','open','label'], axis=1,inplace=True)
+        
+    #     ['open', 'high', 'low', 'close', 'volume', 'RSI', 'RSI14', 'CMO', '5MA',
+    #    '10MA', 'ADX', 'ADX14', 'PDI', 'MDI', 'macd', 'macdhist', 'BBUP',
+    #    'BBMID', 'BBLOW']
+        X = data.drop([ 'high', 'low', 'close','CMO','5MA','10MA','BBUP','BBMID', 'BBLOW','label'], axis=1,inplace=True)
         X = data
         
         # X = data.drop(['close','open','high','low'], axis=1)
@@ -191,18 +234,18 @@ class blockfine():
         unitTime = 1
         da.load_history_data_from_binance(simDays, unitTime ,symbol)
         data = da.simulationDF
-        data['datetime'] =  pd.to_datetime(da.simulationDF['datetime'], unit='ms') + datetime.timedelta(hours=9)
-        data.set_index('datetime',inplace=True)
+        # data['datetime'] =  pd.to_datetime(da.simulationDF['datetime'], unit='ms') + datetime.timedelta(hours=9)
+        # data.set_index('datetime',inplace=True)
+        # print('data last',data.iloc[-1])
+        # dataX = data.drop(['close','datetime'], axis=1)
         
-
-
-        dataX = data
+        window = 60
         
         label = []
-        for i in range(0,len(data)-5):
+        for i in range(0,len(data)-window):
             # label.append(data.iloc[i+5]['close'])
             if(i>999):
-                for j in range (i+1,i+5):
+                for j in range (i+1,i+window):
                     currentPrice = data.iloc[i]['close']
                     futurePrice = data.iloc[j]['close']
                     profit = (futurePrice - currentPrice)/currentPrice * 100
@@ -212,21 +255,32 @@ class blockfine():
                     elif(profit < -1):
                         label.append(1)
                         break
-                    else:
+                    if(j == i+window-1):
                         label.append(0)
                         break
-                        
                     
+        data = data[1000:-window]
+                        
+        ypd = pd.DataFrame(label,columns=['label'])
+        # print('ypd head',ypd.head())
+        ypd.set_index(data.index,inplace=True)
+        
+        data = pd.concat([data,ypd],axis=1)
+        
+        
+        
+        data['datetime'] =  pd.to_datetime(data['datetime'], unit='ms') + datetime.timedelta(hours=9)
+        data.set_index('datetime',inplace=True)
+        
+        # self.compareCov(data)
         
         # datay = data['close']
-        X = dataX[1000:-5]
-        print('lenx',len(X))
-        # compX = dataX[1000:-5]
-        # print('lencompX',len(compX))
-        # print('datay',label)
-        print('datay len',len(label))
-        print('datay sum',sum(label))
-        y = label
+        y = data['label'].values
+        # if(ind == 0):
+        #     X = data.drop(['close','open','high','low','label'], axis=1,inplace=True)
+        # elif(ind == 1):
+        X = data.drop(['close','open','label'], axis=1,inplace=True)
+        X = data
         
         self.X_test = X
         self.y_test = y
@@ -388,6 +442,9 @@ class blockfine():
         joblib.dump(opt_model, 'lgb.pkl')
 
         self.test_pred_y = opt_model.predict(self.X_test)
+        featureIm = opt_model.feature_importances_
+        print('feature colum',self.X_train.columns)
+        print('feature importance',featureIm)
         
         # x = []
         # ans = []
@@ -427,13 +484,19 @@ class blockfine():
 if __name__ == '__main__':
     da = DA.dataAccess()
     block = blockfine()
-    block.makeData(da)
+    
+    # for i in range(0,2):
+    #     block.makeData(da,i)
+    #     lgb_model = block.trainDataLGB()
+    #     block.compareResult()
+    block.makeData(da,0)
+    lgb_model = block.trainDataLGB()
+    block.compareResult()
     # block.trainTestonly(da)
     # X,y = block.makeMortordata()
     # rf_model = block.trainDataRF()
     # xgb_model = block.trainDataXGB()
-    lgb_model = block.trainDataLGB()
-    block.compareResult()
+
     # model_list = [('rf',rf_model),('xgb',xgb_model),('lgb',xgb_model)]
     #Final model 정의
     # model_final = LinearRegression()

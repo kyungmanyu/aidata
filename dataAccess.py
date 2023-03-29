@@ -8,7 +8,7 @@ import datetime
 
 class dataAccess():
     year = 2021
-    month = 1
+    month = 3
     day = 1
     inquirySize = 240
     simulationDF = pd.DataFrame(columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
@@ -43,7 +43,7 @@ class dataAccess():
 
         for day in range(0, simDays):
             dayString = datetime.date(self.year, self.month, self.day) + datetime.timedelta(days=day)
-            print(dayString)
+            # print(dayString)
             string = str(dayString) + 'T00:00:00Z'
             since = self.binance.parse8601(string)
             coinData = self.binance.fetch_ohlcv(

@@ -22,7 +22,17 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from dataAccess import *
 
+import dataAccess as DA
+
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.model_selection import train_test_split
+
+import openpyxl
+from openpyxl.utils.dataframe import dataframe_to_rows
+import os
+from os.path import join
 
 # Hyperparameter setting
 data_dir = '/content/LG_time_series_day11/input/har-data'
@@ -30,7 +40,7 @@ batch_size = 32
 num_classes = 3
 num_epochs = 200
 window_size = 50
-input_size = 5
+input_size = 10
 hidden_size = 64
 num_layers = 2
 bidirectional = True
@@ -50,37 +60,172 @@ random.seed(random_seed)
 
 print(torch.cuda.is_available())
 
+from tensorflow.python.client import device_lib
+device_lib.list_local_devices()
+
+
+historyFileName = 'history.xlsx'
+simulationDF = pd.DataFrame(columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
+
+
+def store_history_data_to_excel(da):
+    if os.path.isdir('history_data') == False:
+        os.mkdir('history_data')
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+
+    for r in dataframe_to_rows(da.simulationDF, index=True, header=True):
+        ws.append(r)
+    wb.save(join('history_data', historyFileName))
+
+def load_history_data_from_excel(da):
+    wb = openpyxl.load_workbook(join('history_data', historyFileName))
+    sheet = wb.get_sheet_by_name('Sheet')
+    df = pd.DataFrame(sheet.values)
+    df.columns = df.iloc[0, :]
+    df = df.iloc[2:, :]
+
+    simulationDF['datetime'] = df['datetime'].astype(object)
+    simulationDF['open'] = df['open'].astype(float)
+    simulationDF['high'] = df['high'].astype(float)
+    simulationDF['low'] = df['low'].astype(float)
+    simulationDF['close'] = df['close'].astype(float)
+    simulationDF['volume'] = df['volume'].astype(float)
+    
+    da.simulationDF = SA.set_rsi_adx_debug(simulationDF)
+
 
 
 def create_classification_dataset(window_size, data_dir, batch_size):
     # data_dir에 있는 train/test 데이터 불러오기
-    x = pickle.load(open(os.path.join(data_dir, 'x_train.pkl'), 'rb'))
-    y = pickle.load(open(os.path.join(data_dir, 'state_train.pkl'), 'rb'))
-    x_test = pickle.load(open(os.path.join(data_dir, 'x_test.pkl'), 'rb'))
-    y_test = pickle.load(open(os.path.join(data_dir, 'state_test.pkl'), 'rb'))
+    # x = pickle.load(open(os.path.join(data_dir, 'x_train.pkl'), 'rb'))
+    # y = pickle.load(open(os.path.join(data_dir, 'state_train.pkl'), 'rb'))
+    # x_test = pickle.load(open(os.path.join(data_dir, 'x_test.pkl'), 'rb'))
+    # y_test = pickle.load(open(os.path.join(data_dir, 'state_test.pkl'), 'rb'))
+    da = DA.dataAccess()
+    simDays = 120
+    symbol = 'ETH/USDT'
+    unitTime = 1
+    if os.path.isfile(join('history_data', historyFileName)) == True:
+        load_history_data_from_excel(da)
+    else:
+        da.load_history_data_from_binance(simDays, unitTime ,symbol)
+        store_history_data_to_excel(da)
+    # da.load_history_data_from_binance(simDays, unitTime ,symbol)
+    data = da.simulationDF
+    # data['datetime'] =  pd.to_datetime(da.simulationDF['datetime'], unit='ms') + datetime.timedelta(hours=9)
+    # data.set_index('datetime',inplace=True)
+    # print('data last',data.iloc[-1])
+    # dataX = data.drop(['close','datetime'], axis=1)
+    
+    window = 60
+    
+    label = []
+    for i in range(0,len(data)-window):
+        # label.append(data.iloc[i+5]['close'])
+        if(i>999):
+            for j in range (i+1,i+window):
+                currentPrice = data.iloc[i]['close']
+                futurePrice = data.iloc[j]['close']
+                profit = (futurePrice - currentPrice)/currentPrice * 100
+                if(profit > 1):
+                    label.append(2)
+                    break
+                elif(profit < -1):
+                    label.append(1)
+                    break
+                if(j == i+window-1):
+                    label.append(0)
+                    break
+                
+    data = data[1000:-window]
+                    
+    ypd = pd.DataFrame(label,columns=['label'])
+    # print('ypd head',ypd.head())
+    ypd.set_index(data.index,inplace=True)
+    
+    data = pd.concat([data,ypd],axis=1)
+    
+    
+    
+    data['datetime'] =  pd.to_datetime(data['datetime'], unit='ms') + datetime.timedelta(hours=9)
+    data.set_index('datetime',inplace=True)
+    
+    # print('shape data : ',data.shape())
+    
+    # self.compareCov(data)
+    
+    # datay = data['close']
+    # y = data['label'].values
+    data_y = data['label'].to_numpy()
+    # if(ind == 0):
+    #     X = data.drop(['close','open','high','low','label'], axis=1,inplace=True)
+    # elif(ind == 1):
+    #     X = data.drop(['close','open','label'], axis=1,inplace=True)
+    X = data.drop(['close','open','label'], axis=1,inplace=True)
+    # X = data
+    
+    
+    # window, label = scailing(data)
+    # data_x = data[['Open','High','Low','Close', 'Volume', 'ema12', 'ema26']].to_numpy()
+    # data_y = data[['label']].to_numpy()
+    data_x = data.to_numpy()
+    
+      
+    # data를 시간순으로 8:2:2의 비율로 train/validation/test set으로 분할
+    # train_slice = slice(None, int(0.6 * len(data)))
+    # valid_slice = slice(int(0.6 * len(data)), int(0.8 * len(data)))
+    # test_slice = slice(int(0.8 * len(data)), None)
+    
+    # train_data_x = data_x[train_slice]
+    # train_data_y = data_y[train_slice]
+    
+    # normalization
+    scaler = MinMaxScaler()
+    # scaler = scaler.fit(train_data_x)
+    scaler = scaler.fit(data_x)
+    data_x = scaler.transform(data_x)
+    
+    windows = [data_x[i:i + window_size] for i in range(0, len(data_x) - int(window_size))]
+    windows = np.transpose(np.array(windows), (0, 2, 1))
+    print('windows size',len(windows))
+    print('window shape',windows.shape)
+    labels = np.roll(data_y, int(-1 * window_size))
+    
+    print('labels shape',labels.shape)
+    
+    labels = labels[:len(windows)]
+    print('labels re shape',labels.shape)
+    print('labels size',len(labels))
+    
+    # if len(window_total) == 0: 
+    #     window_total = window   
+    # else : 
+    #     window_total = np.concatenate((window_total, window), axis=0)
+    # if len(label_total) == 0 : 
+    #     label_total = label
+    # else : 
+    #     label_total = np.concatenate((label_total, label), axis=0)    
 
-    # train data를 시간순으로 8:2의 비율로 train/validation set으로 분할
-    n_train = int(0.8 * len(x))
-    n_valid = len(x) - n_train
-    n_test = len(x_test)
-    x_train, y_train = x[:n_train], y[:n_train]
-    x_valid, y_valid = x[n_train:], y[n_train:]
-
-    # train/validation/test 데이터를 window_size 시점 길이로 분할
+    data_x, test_data_x, data_y, test_data_y = train_test_split(windows, labels, test_size=0.2, shuffle=True, stratify=labels)    
+    train_data_x, valid_data_x, train_data_y, valid_data_y = train_test_split(data_x, data_y, test_size=0.2, shuffle=True,stratify=data_y)
+    
+    # train_data_x, train_data_y = windows[train_slice], labels[train_slice]
+    # valid_data_x, valid_data_y = windows[valid_slice], labels[valid_slice]
+    # test_data_x, test_data_y = windows[test_slice], labels[test_slice]
+       
+    # train/validation/test 데이터를 기반으로 window_size 길이의 input으로 바로 다음 시점을 예측하는 데이터 생성
     datasets = []
-    for set in [(x_train, y_train, n_train), (x_valid, y_valid, n_valid), (x_test, y_test, n_test)]:
-        T = set[0].shape[-1]
-        windows = np.split(set[0][:, :, :window_size * (T // window_size)], (T // window_size), -1)
-        windows = np.concatenate(windows, 0)
-        labels = np.split(set[1][:, :window_size * (T // window_size)], (T // window_size), -1)
-        labels = np.round(np.mean(np.concatenate(labels, 0), -1))
-        datasets.append(torch.utils.data.TensorDataset(torch.Tensor(windows), torch.Tensor(labels)))
+    datasets.append(torch.utils.data.TensorDataset(torch.Tensor(train_data_x), torch.Tensor(train_data_y)))
+    datasets.append(torch.utils.data.TensorDataset(torch.Tensor(valid_data_x), torch.Tensor(valid_data_y)))
+    datasets.append(torch.utils.data.TensorDataset(torch.Tensor(test_data_x), torch.Tensor(test_data_y)))
 
     # train/validation/test DataLoader 구축
     trainset, validset, testset = datasets[0], datasets[1], datasets[2]
-    train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True)
-    valid_loader = torch.utils.data.DataLoader(validset, batch_size=batch_size, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=True)
+    train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=False)
+    valid_loader = torch.utils.data.DataLoader(validset, batch_size=batch_size, shuffle=False)
+    test_loader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)
 
     return train_loader, valid_loader, test_loader
 
@@ -243,6 +388,10 @@ def test_model(model, test_loader):
     with torch.no_grad():
         corrects = 0
         total = 0
+        preds_long = []
+        preds_short = []
+        label_long = []
+        label_short = []
         for inputs, labels in test_loader:
             inputs = inputs.to(device)
             labels = labels.to(device, dtype=torch.long)
@@ -255,12 +404,28 @@ def test_model(model, test_loader):
             _, preds = torch.max(outputs, 1)
 
             # batch별 정답 개수를 축적함
+            for i in range (0,len(preds)):
+                if preds[i] == 2:
+                    preds_long.append(1)
+                elif preds[i] == 1:
+                    preds_short.append(1)
+                if labels.data[i] == 2:
+                    label_long.append(1)
+                elif labels.data[i] == 1:
+                    label_short.append(1)
             corrects += torch.sum(preds == labels.data)
             total += labels.size(0)
 
     # accuracy를 도출함
     test_acc = corrects.double() / total
     print('Testing Acc: {:.4f}'.format(test_acc))
+    
+    print('Testing long pred: ', len(preds_long))
+    print('Testing long ans: ', len(label_long))
+    
+    print('Testing short pred: ', len(preds_short))
+    print('Testing short ans: ', len(label_short))
+    
     
     
 
