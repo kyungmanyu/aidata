@@ -154,7 +154,13 @@ class blockfine():
     #     ['open', 'high', 'low', 'close', 'volume', 'RSI', 'RSI14', 'CMO', '5MA',
     #    '10MA', 'ADX', 'ADX14', 'PDI', 'MDI', 'macd', 'macdhist', 'BBUP',
     #    'BBMID', 'BBLOW']
-        X = data.drop([ 'high', 'low', 'close','CMO','5MA','10MA','BBUP','BBMID', 'BBLOW','label'], axis=1,inplace=True)
+        # X = data.drop([ 'high', 'low', 'close','CMO','5MA','10MA','BBUP','BBMID', 'BBLOW','label'], axis=1,inplace=True)
+        if(ind == 0):
+            X = data.drop(['label'], axis=1,inplace=True)
+        elif(ind == 1):
+            X = data.drop([ 'high', 'low', 'close','CMO','5MA','10MA','BBUP','BBMID', 'BBLOW','label'], axis=1,inplace=True)
+        elif(ind == 2):
+            X = data.drop(['open', 'high', 'low', 'close','RSI','RSI14','CMO','5MA','10MA','BBUP','BBMID', 'BBLOW','label'], axis=1,inplace=True)
         X = data
         
         # X = data.drop(['close','open','high','low'], axis=1)
@@ -332,8 +338,10 @@ class blockfine():
         ans = []
         long = []
         short = []
+        mid = []
         long_pred = []
         short_pred = []
+        mid_pred = []
         for i in range(len(self.test_pred_y)):
             if self.y_test[i] == 2:
                 long.append(self.y_test[i])
@@ -343,12 +351,22 @@ class blockfine():
                 short.append(self.y_test[i])
                 # print('short index:',self.X_test.index[i])
                 # print('short actual:',self.y_test[i])
-            if self.test_pred_y[i] == 2:
+            elif self.y_test[i] == 0:
+                mid.append(self.y_test[i])
+                # print('short index:',self.X_test.index[i])
+                # print('short actual:',self.y_test[i])
+            
+            if self.test_pred_y[i] == 2 and self.test_pred_y[i] == self.y_test[i]:
                 long_pred.append(self.test_pred_y[i])
                 # print('long index:',self.X_test.index[i])
                 # print('long predict:',self.test_pred_y[i])
-            elif self.test_pred_y[i] == 1:
-                short_pred.append(self.y_test[i])
+            elif self.test_pred_y[i] == 1 and self.test_pred_y[i] == self.y_test[i]:
+                short_pred.append(self.test_pred_y[i])
+                # print('short index:',self.X_test.index[i])
+                # print('short predic:',self.test_pred_y[i])
+                
+            elif self.test_pred_y[i] == 0 and self.test_pred_y[i] == self.y_test[i]:
+                mid_pred.append(self.test_pred_y[i])
                 # print('short index:',self.X_test.index[i])
                 # print('short predic:',self.test_pred_y[i])
             
@@ -359,11 +377,14 @@ class blockfine():
         # accuracy = sum(ans)/len(self.y_test) * 100
         print('long short pred',len(long_pred)+len(short_pred))
         print('long short act',(len(long)+len(short)))
-        accuracy = (len(long_pred)+len(short_pred))/(len(long)+len(short)) * 100
+        print('mid pred',len(mid_pred))
+        print('mid act',(len(mid)))
+        accuracy = (len(long_pred)+len(short_pred)+len(mid_pred))/(len(long)+len(short)+len(mid)) * 100
         # mae = np.mean(np.abs(self.test_pred_y - self.y_test))
         print('comlgb acc',accuracy)
         print('comlgb long',len(long))
         print('comlgb short',len(short))
+        print('comlgb mid',len(mid))
         now = datetime.datetime.now()
         print('endtime',str(now))
         print('f1score',f1_score( self.y_test, self.test_pred_y ,average='weighted'))
@@ -485,13 +506,13 @@ if __name__ == '__main__':
     da = DA.dataAccess()
     block = blockfine()
     
-    # for i in range(0,2):
-    #     block.makeData(da,i)
-    #     lgb_model = block.trainDataLGB()
-    #     block.compareResult()
-    block.makeData(da,0)
-    lgb_model = block.trainDataLGB()
-    block.compareResult()
+    for i in range(0,2):
+        block.makeData(da,i)
+        lgb_model = block.trainDataLGB()
+        block.compareResult()
+    # block.makeData(da,0)
+    # lgb_model = block.trainDataLGB()
+    # block.compareResult()
     # block.trainTestonly(da)
     # X,y = block.makeMortordata()
     # rf_model = block.trainDataRF()

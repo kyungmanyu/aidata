@@ -47,8 +47,9 @@ bidirectional = True
 
 random_seed = 42
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # Detect if we have a GPU available
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu") # Detect if we have a GPU available
 
+print('device',device)
 # seed 고정
 torch.manual_seed(random_seed)
 torch.cuda.manual_seed(random_seed)
@@ -390,8 +391,10 @@ def test_model(model, test_loader):
         total = 0
         preds_long = []
         preds_short = []
+        preds_mid = []
         label_long = []
         label_short = []
+        label_mid = []
         for inputs, labels in test_loader:
             inputs = inputs.to(device)
             labels = labels.to(device, dtype=torch.long)
@@ -405,14 +408,18 @@ def test_model(model, test_loader):
 
             # batch별 정답 개수를 축적함
             for i in range (0,len(preds)):
-                if preds[i] == 2:
+                if preds[i] == 2 and preds[i] == labels.data[i]:
                     preds_long.append(1)
-                elif preds[i] == 1:
+                elif preds[i] == 1 and preds[i] == labels.data[i]:
                     preds_short.append(1)
+                elif preds[i] == 0 and preds[i] == labels.data[i]:
+                    preds_mid.append(1)
                 if labels.data[i] == 2:
                     label_long.append(1)
                 elif labels.data[i] == 1:
                     label_short.append(1)
+                elif labels.data[i] == 0:
+                    label_mid.append(1)
             corrects += torch.sum(preds == labels.data)
             total += labels.size(0)
 
@@ -423,10 +430,12 @@ def test_model(model, test_loader):
     print('Testing long pred: ', len(preds_long))
     print('Testing long ans: ', len(label_long))
     
+    
     print('Testing short pred: ', len(preds_short))
     print('Testing short ans: ', len(label_short))
     
-    
+    print('Testing mid pred: ', len(preds_mid))
+    print('Testing mid ans: ', len(label_mid))
     
 
 
