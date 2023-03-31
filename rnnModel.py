@@ -61,8 +61,8 @@ random.seed(random_seed)
 
 print(torch.cuda.is_available())
 
-from tensorflow.python.client import device_lib
-print(device_lib.list_local_devices())
+# from tensorflow.python.client import device_lib
+# print(device_lib.list_local_devices())
 
 
 historyFileName = 'history.xlsx'
@@ -439,7 +439,135 @@ def test_model(model, test_loader):
     
 
 
+def makeTestLoader(window_size,batch_size):
+    da = DA.dataAccess()
+    simDays = 120
+    symbol = 'ETH/USDT'
+    unitTime = 1
+    if os.path.isfile(join('history_data', historyFileName)) == True:
+        load_history_data_from_excel(da)
+    else:
+        da.load_history_data_from_binance(simDays, unitTime ,symbol)
+        store_history_data_to_excel(da)
+    # da.load_history_data_from_binance(simDays, unitTime ,symbol)
+    data = da.simulationDF
+    # data['datetime'] =  pd.to_datetime(da.simulationDF['datetime'], unit='ms') + datetime.timedelta(hours=9)
+    # data.set_index('datetime',inplace=True)
+    # print('data last',data.iloc[-1])
+    # dataX = data.drop(['close','datetime'], axis=1)
+    
+    window = 60
+    
+    label = []
+    for i in range(0,len(data)-window):
+        # label.append(data.iloc[i+5]['close'])
+        if(i>999):
+            for j in range (i+1,i+window):
+                currentPrice = data.iloc[i]['close']
+                futurePrice = data.iloc[j]['close']
+                profit = (futurePrice - currentPrice)/currentPrice * 100
+                if(profit > 1):
+                    label.append(2)
+                    break
+                elif(profit < -1):
+                    label.append(1)
+                    break
+                if(j == i+window-1):
+                    label.append(0)
+                    break
+                
+    data = data[1000:-window]
+                    
+    ypd = pd.DataFrame(label,columns=['label'])
+    # print('ypd head',ypd.head())
+    ypd.set_index(data.index,inplace=True)
+    
+    data = pd.concat([data,ypd],axis=1)
+    
+    
+    
+    data['datetime'] =  pd.to_datetime(data['datetime'], unit='ms') + datetime.timedelta(hours=9)
+    data.set_index('datetime',inplace=True)
+    
+    # print('shape data : ',data.shape())
+    
+    # self.compareCov(data)
+    
+    # datay = data['close']
+    # y = data['label'].values
+    data_y = data['label'].to_numpy()
+    # if(ind == 0):
+    #     X = data.drop(['close','open','high','low','label'], axis=1,inplace=True)
+    # elif(ind == 1):
+    #     X = data.drop(['close','open','label'], axis=1,inplace=True)
+    X = data.drop(['close','open','label'], axis=1,inplace=True)
+    # X = data
+    
+    
+    # window, label = scailing(data)
+    # data_x = data[['Open','High','Low','Close', 'Volume', 'ema12', 'ema26']].to_numpy()
+    # data_y = data[['label']].to_numpy()
+    data_x = data.to_numpy()
+    
+      
+    # data를 시간순으로 8:2:2의 비율로 train/validation/test set으로 분할
+    # train_slice = slice(None, int(0.6 * len(data)))
+    # valid_slice = slice(int(0.6 * len(data)), int(0.8 * len(data)))
+    # test_slice = slice(int(0.8 * len(data)), None)
+    
+    # train_data_x = data_x[train_slice]
+    # train_data_y = data_y[train_slice]
+    
+    # normalization
+    scaler = MinMaxScaler()
+    # scaler = scaler.fit(train_data_x)
+    scaler = scaler.fit(data_x)
+    data_x = scaler.transform(data_x)
+    
+    windows = [data_x[i:i + window_size] for i in range(0, len(data_x) - int(window_size))]
+    windows = np.transpose(np.array(windows), (0, 2, 1))
+    print('windows size',len(windows))
+    print('window shape',windows.shape)
+    labels = np.roll(data_y, int(-1 * window_size))
+    
+    print('labels shape',labels.shape)
+    
+    labels = labels[:len(windows)]
+    print('labels re shape',labels.shape)
+    print('labels size',len(labels))
+    
+    # if len(window_total) == 0: 
+    #     window_total = window   
+    # else : 
+    #     window_total = np.concatenate((window_total, window), axis=0)
+    # if len(label_total) == 0 : 
+    #     label_total = label
+    # else : 
+    #     label_total = np.concatenate((label_total, label), axis=0)    
 
+    # data_x, test_data_x, data_y, test_data_y = train_test_split(windows, labels, test_size=0.2, shuffle=True, stratify=labels)    
+    # train_data_x, valid_data_x, train_data_y, valid_data_y = train_test_split(data_x, data_y, test_size=0.2, shuffle=True,stratify=data_y)
+    test_data_x, test_data_y = train_test_split(windows, labels, test_size=1, shuffle=True, stratify=labels)    
+    # train_data_x, valid_data_x, train_data_y, valid_data_y = train_test_split(data_x, data_y, test_size=0.2, shuffle=True,stratify=data_y)
+    
+    # train_data_x, train_data_y = windows[train_slice], labels[train_slice]
+    # valid_data_x, valid_data_y = windows[valid_slice], labels[valid_slice]
+    # test_data_x, test_data_y = windows[test_slice], labels[test_slice]
+       
+    # train/validation/test 데이터를 기반으로 window_size 길이의 input으로 바로 다음 시점을 예측하는 데이터 생성
+    datasets = []
+    # datasets.append(torch.utils.data.TensorDataset(torch.Tensor(train_data_x), torch.Tensor(train_data_y)))
+    # datasets.append(torch.utils.data.TensorDataset(torch.Tensor(valid_data_x), torch.Tensor(valid_data_y)))
+    datasets.append(torch.utils.data.TensorDataset(torch.Tensor(test_data_x), torch.Tensor(test_data_y)))
+
+    # train/validation/test DataLoader 구축
+    # trainset, validset, testset = datasets[0], datasets[1], datasets[2]
+    # train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=False)
+    # valid_loader = torch.utils.data.DataLoader(validset, batch_size=batch_size, shuffle=False)
+    test_loader = torch.utils.data.DataLoader(datasets, batch_size=batch_size, shuffle=False)
+    
+    return test_loader
+    
 
 
 # Dataloader 구축
@@ -463,10 +591,16 @@ dataloaders_dict = {
 # loss function 설정
 criterion = nn.CrossEntropyLoss()
 
-# GRU with attention 모델 학습
-gru, gru_val_acc_history = train_model(gru, dataloaders_dict, criterion, num_epochs,
-                                       optimizer=optim.Adam(gru.parameters(), lr=0.001))
+# # GRU with attention 모델 학습
+# gru, gru_val_acc_history = train_model(gru, dataloaders_dict, criterion, num_epochs,
+#                                        optimizer=optim.Adam(gru.parameters(), lr=0.001))
 
     # GRU with attention 모델 검증하기 (Acc: 0.8889)
 # Benchmark model인 GRU(Acc: 0.8000)와 비교했을 때, Attetion의 적용이 성능 향상에 도움이 됨을 알 수 있음
+
+
+test_loader = makeTestLoader(window_size,batch_size)
+
+gru.load_state_dict(torch.load('best_model.pt', map_location=torch.device('cpu')))
+
 test_model(gru, test_loader)
